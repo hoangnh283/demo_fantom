@@ -1,0 +1,19 @@
+{
+    "name": "hoangnh283/fantom",
+    "autoload": {
+        "psr-4": {
+            "Hoangnh283\\Fantom\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "HoangNH283",
+            "email": "chimnhokhonglo@gmail.com"
+        }
+    ],
+    "require": {
+        "web3p/ethereum-tx": "^0.4.3",
+        "web3p/rlp": "^0.3.4",
+        "web3p/web3.php": "dev-master"
+    }
+}
