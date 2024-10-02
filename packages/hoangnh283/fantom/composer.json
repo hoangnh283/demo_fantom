@@ -14,6 +14,8 @@
     "require": {
         "web3p/ethereum-tx": "^0.4.3",
         "web3p/rlp": "^0.3.4",
-        "web3p/web3.php": "dev-master"
+        "web3p/web3.php": "dev-master",
+        "kornrunner/keccak": "^1.1",
+        "kornrunner/secp256k1": "^0.3.0"
     }
 }
