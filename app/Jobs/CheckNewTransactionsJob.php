@@ -52,56 +52,42 @@ class CheckNewTransactionsJob implements ShouldQueue
         $array_address =  FantomAddress::pluck('address')->toArray();
 
         $client = new Client();
-        // $response = $client->post('https://rpcapi.fantom.network', [
-        //     'json' => [
-        //         'jsonrpc' => '2.0',
-        //         'method' => 'eth_blockNumber',
-        //         'params' => [],
-        //         'id' => 1,
-        //     ]
-        // ]);
-        // $blockNumber = json_decode($response->getBody()->getContents(), true)['result'];
-        // while (true) {
-            $blockResponse = $client->post('https://rpcapi.fantom.network', [
-                'json' => [
-                    'jsonrpc' => '2.0',
-                    'method' => 'eth_getBlockByNumber', // API để lấy block theo số
-                    'params' => [$this->blockNumber, true], // true để lấy chi tiết các giao dịch
-                    'id' => 1,
-                ]
-            ]);
+        $blockResponse = $client->post('https://rpcapi.fantom.network', [
+            'json' => [
+                'jsonrpc' => '2.0',
+                'method' => 'eth_getBlockByNumber', // API để lấy block theo số
+                'params' => [$this->blockNumber, true], // true để lấy chi tiết các giao dịch
+                'id' => 1,
+            ]
+        ]);
 
-            $blockDetails = json_decode($blockResponse->getBody()->getContents(), true)['result'];
+        $blockDetails = json_decode($blockResponse->getBody()->getContents(), true)['result'];
 
-            if (isset($blockDetails['transactions']) && is_array($blockDetails['transactions'])) {
-                foreach ($blockDetails['transactions'] as $tx) {
-                    // Kiểm tra nếu giao dịch có địa chỉ nhận là địa chỉ của bạn
-                    if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address))) {
-                        $transaction = FantomTransactions::create([
-                            'from_address' => $tx['from'],
-                            'to_address' => $tx['to'],
-                            'amount' => hexdec($tx['value'])/$this->wei,
-                            'hash' => $tx['hash'],
-                            'gas'=> hexdec($tx['gas'])/$this->wei,
-                            'gas_price'=> hexdec($tx['gasPrice'])/$this->wei,
-                            'nonce'=> hexdec($tx['nonce']),
-                            'block_number'=> hexdec($tx['blockNumber']),
-                            'status' => "success",
-                            'type' => "deposit",
-                        ]);
-                        $addressInfo = FantomAddress::where('address', $tx['to'])->first();
-                        FantomDeposit::create([
-                            'address_id' => $addressInfo->id,
-                            'transaction_id' => $transaction->id,
-                            'currency' => 'FTM',
-                            'amount' => hexdec($tx['value'])/$this->wei,
-                        ]);
-                    }
+        if (isset($blockDetails['transactions']) && is_array($blockDetails['transactions'])) {
+            foreach ($blockDetails['transactions'] as $tx) {
+                // Kiểm tra nếu giao dịch có địa chỉ nhận là địa chỉ của bạn
+                if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address))) {
+                    $transaction = FantomTransactions::create([
+                        'from_address' => $tx['from'],
+                        'to_address' => $tx['to'],
+                        'amount' => hexdec($tx['value'])/$this->wei,
+                        'hash' => $tx['hash'],
+                        'gas'=> hexdec($tx['gas'])/$this->wei,
+                        'gas_price'=> hexdec($tx['gasPrice'])/$this->wei,
+                        'nonce'=> hexdec($tx['nonce']),
+                        'block_number'=> hexdec($tx['blockNumber']),
+                        'status' => "success",
+                        'type' => "deposit",
+                    ]);
+                    $addressInfo = FantomAddress::where('address', $tx['to'])->first();
+                    FantomDeposit::create([
+                        'address_id' => $addressInfo->id,
+                        'transaction_id' => $transaction->id,
+                        'currency' => 'FTM',
+                        'amount' => hexdec($tx['value'])/$this->wei,
+                    ]);
                 }
             }
-            // Tăng blockNumber lên 1 để kiểm tra block tiếp theo
-        //     $this->blockNumber = hexdec($this->blockNumber);
-        //     $this->blockNumber = '0x'. dechex(++$this->blockNumber);
-        // }
+        }
     }
 }
