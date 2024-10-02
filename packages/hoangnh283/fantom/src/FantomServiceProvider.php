@@ -3,7 +3,7 @@ namespace Hoangnh283\Fantom;
 
 use Illuminate\Support\ServiceProvider;
 use Hoangnh283\Fantom\Services\FantomService;
-use Hoangnh283\Fantom\Console\Commands;
+use Hoangnh283\Fantom\Console\Commands\CheckNewTransactions;
 
 class FantomServiceProvider extends ServiceProvider {
     public function boot()
@@ -20,6 +20,9 @@ class FantomServiceProvider extends ServiceProvider {
     }
     public function register()
     {
+        $this->commands([
+            CheckNewTransactions::class,
+        ]);
         $this->app->bind(FantomService::class, function ($app) {
             return new FantomService();
         });

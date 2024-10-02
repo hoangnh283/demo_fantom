@@ -4,6 +4,7 @@ namespace Hoangnh283\Fantom\Console\Commands;
 
 use Illuminate\Console\Command;
 use Hoangnh283\Fantom\Services\FantomService;
+use App\Jobs\CheckNewTransactionsJob;
 use GuzzleHttp\Client;
 class CheckNewTransactions extends Command
 {
@@ -14,13 +15,28 @@ class CheckNewTransactions extends Command
      */
     protected $signature = 'command:check-new-transactions';
     protected $rpcUrl = 'https://rpcapi.fantom.network';
+    protected $blockNumber ;
     /**
      * The console command description.
      *
      * @var string
      */
     protected $description = 'Command description';
-
+    public function __construct()
+    {
+        parent::__construct();
+        $client = new Client();
+        // Lấy block mới nhất
+        $response = $client->post('https://rpcapi.fantom.network', [
+            'json' => [
+                'jsonrpc' => '2.0',
+                'method' => 'eth_blockNumber',
+                'params' => [],
+                'id' => 1,
+            ]
+        ]);
+        $this->blockNumber = json_decode($response->getBody()->getContents(), true)['result'];
+    }
     /**
      * Execute the console command.
      *
@@ -29,7 +45,7 @@ class CheckNewTransactions extends Command
     public function handle()
     {
         // return Command::SUCCESS;
-        $this->checkNewTransactions();
+        CheckNewTransactionsJob::dispatch();
     }
 
     public function checkNewTransactions(){

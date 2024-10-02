@@ -19,13 +19,12 @@ use Web3\Contract;
 use Web3p\EthereumUtil;
 use Hoangnh283\Fantom\Models\FantomDeposit;
 use Hoangnh283\Fantom\Models\FantomTransactions;
+use Hoangnh283\Fantom\Models\FantomBalances;
 class FantomService
 {
     protected $wei = '1000000000000000000'; 
     protected $apiKey = 'XFUA9I7AAGINWFE4XB3UFG5AS4FDRT5QGC';
     // protected $rpcUrl = 'https://rpcapi.fantom.network';
-    protected $privateKey = '5bcce244246f48ca0f9fac8ddb9da4648f26ab8aa4ef60a6816c69b2f74f0912';
-    protected $toAddress = '0x496d6ae4B693E5eF9cCE6316567C8A8fD1ea34e9';
     private $chainId;
     private $rpcUrl;
     // Mảng chứa thông tin về các mạng
@@ -101,6 +100,12 @@ class FantomService
             $wei = $data['result'];
             // Chuyển đổi từ Wei sang FTM
             $ftmBalance = bcdiv($wei, '1000000000000000000', 18); // Sử dụng bcdiv để chia chính xác
+
+            $addressInfo = FantomAddress::where('address', $address)->first();
+            FantomBalances::updateOrCreate(
+                ['address_id' => $addressInfo->id], 
+                ['ftm' => $ftmBalance, 'usdt' => 0] 
+            );
             return $ftmBalance;
         } else {
             return "Không thể lấy số dư, lỗi: " . $data['message'];
@@ -221,24 +226,112 @@ class FantomService
         return $this->sendRpcRequest($data);
     }
     
-    function gettxreceiptstatus($txHash) {
+    function gettxreceiptstatus($txHash, $maxRetries = 10, $delay = 1) {
         $apiUrl = "https://api.ftmscan.com/api?module=transaction&action=gettxreceiptstatus&txhash=" . $txHash . "&apikey=" . $this->apiKey;
+        $retryCount = 0;
+        do {
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $apiUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $apiUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-
-        $response = curl_exec($ch);
-        curl_close($ch);
-        $data = json_decode($response, true);
-
-        if ($data['status'] === "1") {
-            return $data['result'];
-        } else {
-            return "Unable to get transaction status, error: " . $data['message'];
-        }
+            $response = curl_exec($ch);
+            curl_close($ch);
+            $data = json_decode($response, true);
+            if ($data['status'] === "1" && !empty($data['result']['status'])) {
+                return $data['result']['status'] == '1' ? true : false;
+            }
+            sleep($delay);
+            $retryCount++;
+        } while ($retryCount < $maxRetries);
+        return "Unable to get transaction status";
     }
 
+    public function getBlockNumber() {
+        $data = json_encode([
+            'jsonrpc' => '2.0',
+            'method' => 'eth_blockNumber',
+            'params' => [],
+            'id' => 1,
+        ]);
+        $ch = curl_init($this->rpcUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        $response = curl_exec($ch);
+        curl_close($ch);
     
+        $result = json_decode($response, true);
+        return $result['result'];
+    }
+
+    public function checkNewTransactions(){
+        $array_address =  FantomAddress::pluck('address')->toArray();
+
+        $client = new Client();
+        // Lấy block mới nhất
+        $response = $client->post($this->rpcUrl, [
+            'json' => [
+                'jsonrpc' => '2.0',
+                'method' => 'eth_blockNumber',
+                'params' => [],
+                'id' => 1,
+            ]
+        ]);
+
+        $blockNumber = json_decode($response->getBody()->getContents(), true)['result'];
+        // var_dump($blockNumber);
+        // $blockNumber = hexdec($blockNumber);
+        // var_dump('0x'. dechex(++$blockNumber));die;
+        // Lấy chi tiết block
+        // while (true) {
+            $blockResponse = $client->post($this->rpcUrl, [
+                'json' => [
+                    'jsonrpc' => '2.0',
+                    'method' => 'eth_getBlockByNumber', // API để lấy block theo số
+                    'params' => [$blockNumber, true], // true để lấy chi tiết các giao dịch
+                    'id' => 1,
+                ]
+            ]);
+
+            $blockDetails = json_decode($blockResponse->getBody()->getContents(), true)['result'];
+            // var_dump($blockDetails);die;
+
+            if (isset($blockDetails['transactions']) && is_array($blockDetails['transactions'])) {
+                foreach ($blockDetails['transactions'] as $tx) {
+                    // Kiểm tra nếu giao dịch có địa chỉ nhận là địa chỉ của bạn
+                    if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address))) {
+
+                        $receiptstatus = $this->gettxreceiptstatus($tx['hash']) ? 'success' : 'failed';
+
+                        $transaction = FantomTransactions::create([
+                            'from_address' => $tx['from'],
+                            'to_address' => $tx['to'],
+                            'amount' => hexdec($tx['value'])/$this->wei,
+                            'hash' => $tx['hash'],
+                            'gas'=> hexdec($tx['gas'])/$this->wei,
+                            'gas_price'=> hexdec($tx['gasPrice'])/$this->wei,
+                            'nonce'=> hexdec($tx['nonce']),
+                            'block_number'=> hexdec($tx['blockNumber']),
+                            'status' => $receiptstatus,
+                            'type' => "deposit",
+                            
+                        ]);
+                        $addressInfo = FantomAddress::where('address', $tx['to'])->first();
+                        FantomDeposit::create([
+                            'address_id' => $addressInfo->id,
+                            'transaction_id' => $transaction->id,
+                            'currency' => 'FTM',
+                            'amount' => hexdec($tx['value'])/$this->wei,
+                        ]);
+                    }
+                }
+            }
+            // Tăng blockNumber lên 1 để kiểm tra block tiếp theo
+            // $blockNumber = hexdec($blockNumber);
+            // $blockNumber = '0x'. dechex(++$blockNumber);
+            // sleep(1);
+        // }
+    }
 }

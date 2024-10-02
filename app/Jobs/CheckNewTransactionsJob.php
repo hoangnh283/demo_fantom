@@ -25,20 +25,12 @@ class CheckNewTransactionsJob implements ShouldQueue
      */
     // private $fantomService;
     private $blockNumber;
+    private $fantomService;
     private $wei = 1000000000000000000;
     public function __construct()
     {
-        $client = new Client();
-        // Lấy block mới nhất
-        $response = $client->post('https://rpcapi.fantom.network', [
-            'json' => [
-                'jsonrpc' => '2.0',
-                'method' => 'eth_blockNumber',
-                'params' => [],
-                'id' => 1,
-            ]
-        ]);
-        $this->blockNumber = json_decode($response->getBody()->getContents(), true)['result'];
+        $this->fantomService =  new FantomService();
+        $this->blockNumber = $this->fantomService->getBlockNumber();
     }
 
     /**
@@ -52,21 +44,22 @@ class CheckNewTransactionsJob implements ShouldQueue
         $array_address =  FantomAddress::pluck('address')->toArray();
 
         $client = new Client();
+        
         $blockResponse = $client->post('https://rpcapi.fantom.network', [
             'json' => [
                 'jsonrpc' => '2.0',
                 'method' => 'eth_getBlockByNumber', // API để lấy block theo số
-                'params' => [$this->blockNumber, true], // true để lấy chi tiết các giao dịch
+                'params' => [$this->blockNumber, true], 
                 'id' => 1,
             ]
         ]);
-
         $blockDetails = json_decode($blockResponse->getBody()->getContents(), true)['result'];
 
         if (isset($blockDetails['transactions']) && is_array($blockDetails['transactions'])) {
             foreach ($blockDetails['transactions'] as $tx) {
                 // Kiểm tra nếu giao dịch có địa chỉ nhận là địa chỉ của bạn
                 if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address))) {
+                    $receiptstatus = $this->fantomService->gettxreceiptstatus($tx['hash']) ? 'success' : 'failed';
                     $transaction = FantomTransactions::create([
                         'from_address' => $tx['from'],
                         'to_address' => $tx['to'],
@@ -76,7 +69,7 @@ class CheckNewTransactionsJob implements ShouldQueue
                         'gas_price'=> hexdec($tx['gasPrice'])/$this->wei,
                         'nonce'=> hexdec($tx['nonce']),
                         'block_number'=> hexdec($tx['blockNumber']),
-                        'status' => "success",
+                        'status' => $receiptstatus,
                         'type' => "deposit",
                     ]);
                     $addressInfo = FantomAddress::where('address', $tx['to'])->first();
