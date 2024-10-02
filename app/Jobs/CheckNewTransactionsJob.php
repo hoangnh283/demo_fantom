@@ -61,7 +61,7 @@ class CheckNewTransactionsJob implements ShouldQueue
         //     ]
         // ]);
         // $blockNumber = json_decode($response->getBody()->getContents(), true)['result'];
-        while (true) {
+        // while (true) {
             $blockResponse = $client->post('https://rpcapi.fantom.network', [
                 'json' => [
                     'jsonrpc' => '2.0',
@@ -91,7 +91,7 @@ class CheckNewTransactionsJob implements ShouldQueue
                         ]);
                         $addressInfo = FantomAddress::where('address', $tx['to'])->first();
                         FantomDeposit::create([
-                            'address_id' => 1,
+                            'address_id' => $addressInfo->id,
                             'transaction_id' => $transaction->id,
                             'currency' => 'FTM',
                             'amount' => hexdec($tx['value'])/$this->wei,
@@ -100,8 +100,8 @@ class CheckNewTransactionsJob implements ShouldQueue
                 }
             }
             // Tăng blockNumber lên 1 để kiểm tra block tiếp theo
-            $this->blockNumber = hexdec($this->blockNumber);
-            $this->blockNumber = '0x'. dechex(++$this->blockNumber);
-        }
+        //     $this->blockNumber = hexdec($this->blockNumber);
+        //     $this->blockNumber = '0x'. dechex(++$this->blockNumber);
+        // }
     }
 }
