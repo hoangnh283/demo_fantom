@@ -44,7 +44,7 @@ class CheckNewTransactionsJob implements ShouldQueue
         $array_address =  FantomAddress::pluck('address')->toArray();
 
         $client = new Client();
-        
+
         $blockResponse = $client->post('https://rpcapi.fantom.network', [
             'json' => [
                 'jsonrpc' => '2.0',
@@ -58,7 +58,7 @@ class CheckNewTransactionsJob implements ShouldQueue
         if (isset($blockDetails['transactions']) && is_array($blockDetails['transactions'])) {
             foreach ($blockDetails['transactions'] as $tx) {
                 // Kiểm tra nếu giao dịch có địa chỉ nhận là địa chỉ của bạn
-                if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address))) {
+                if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address)) && hexdec($tx['value']) > 0) { // check giao dịch FTM 
                     $receiptstatus = $this->fantomService->gettxreceiptstatus($tx['hash']) ? 'success' : 'failed';
                     $transaction = FantomTransactions::create([
                         'from_address' => $tx['from'],

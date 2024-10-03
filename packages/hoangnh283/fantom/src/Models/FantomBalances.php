@@ -9,7 +9,7 @@ class FantomBalances extends Model
 {
     use HasFactory;
 
-    protected $table = 'wallets_fantom_balances';
+    protected $table = 'wallets';
 
     protected $fillable = ['address_id', 'ftm', 'usdt'];
 
