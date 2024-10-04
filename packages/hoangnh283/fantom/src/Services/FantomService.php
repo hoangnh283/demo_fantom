@@ -144,14 +144,38 @@ class FantomService
         }
         return $response;
     }
+    public function getGasPrice() {
+        $data = json_encode([
+            'jsonrpc' => '2.0',
+            'method' => 'eth_gasPrice',
+            'params' => [],
+            'id' => 1,
+        ]);
+        return $this->sendRpcRequest($data);
+    }
 
-    public function transferFantomToken($fromPrivateKey, $fromAddress, $toAddress, $amount, $gas= 30400, $gasPrice= 10000000000000 ) {
+    public function getEstimateGas($fromAddress, $toAddress, $value) {
+        $data = json_encode([
+            'jsonrpc' => '2.0',
+            'method' => 'eth_estimateGas',
+            'params' => [
+                [
+                    "from" => $fromAddress,
+                    "to" => $toAddress,
+                    "value" => $value
+                ],
+            ],
+            'id' => 1,
+        ]);
+        return $this->sendRpcRequest($data);
+    }
+
+    public function transferFantomToken($fromPrivateKey, $fromAddress, $toAddress, $amount) {
         // $amountWei = str_pad(dechex(bcmul($amount, '1000000000000000000')), 64, '0', STR_PAD_LEFT); 
-        $amountWei = dechex(bcmul($amount, '1000000000000000000')); 
-        // var_dump($amountWei);die;
+        $amountWei = '0x' . dechex(bcmul($amount, '1000000000000000000')); 
         $nonce = $this->getTransactionCount($fromAddress);
-        $gasHex = '0x' . dechex($gas);
-        $gasPriceHex = '0x' . dechex($gasPrice);
+        $gasHex = $this->getEstimateGas($fromAddress, $toAddress,$amountWei);
+        $gasPriceHex = $this->getGasPrice();
         $transaction = [
             'nonce' => $nonce,
             'from' => $fromAddress,
@@ -294,7 +318,7 @@ class FantomService
                     'id' => 1,
                 ]
             ]);
-
+            
             $blockDetails = json_decode($blockResponse->getBody()->getContents(), true)['result'];
             // var_dump($blockDetails);die;
 
