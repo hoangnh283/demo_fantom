@@ -13,12 +13,8 @@ return new class extends Migration
      */
     public function up()
     {
-        Schema::create('wallets', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('address_id')->constrained('wallets_fantom_address')->onDelete('cascade');
-            $table->string('currency'); 
-            $table->decimal('amount', 20, 8);
-            $table->timestamps();
+        Schema::create('current_block', function (Blueprint $table) {
+            $table->unsignedBigInteger('block_number'); 
         });
     }
 
@@ -29,6 +25,6 @@ return new class extends Migration
      */
     public function down()
     {
-        Schema::dropIfExists('wallets');
+        Schema::dropIfExists('current_block');
     }
 };

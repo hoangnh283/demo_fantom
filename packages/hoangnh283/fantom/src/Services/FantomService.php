@@ -104,7 +104,7 @@ class FantomService
             $addressInfo = FantomAddress::where('address', $address)->first();
             FantomBalances::updateOrCreate(
                 ['address_id' => $addressInfo->id], 
-                ['ftm' => $ftmBalance, 'usdt' => 0] 
+                ['amount' => $ftmBalance, 'currency' => 'FTM'] 
             );
             return $ftmBalance;
         } else {

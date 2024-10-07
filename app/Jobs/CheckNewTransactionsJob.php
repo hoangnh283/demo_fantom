@@ -9,11 +9,12 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Hoangnh283\Fantom\Services\FantomService;
-use Illuminate\Support\Facades\Log; // Thêm dòng này để sử dụng Log
+use Illuminate\Support\Facades\Log; 
 use GuzzleHttp\Client;
 use Hoangnh283\Fantom\Models\FantomDeposit;
 use Hoangnh283\Fantom\Models\FantomAddress;
 use Hoangnh283\Fantom\Models\FantomTransactions;
+use Hoangnh283\Fantom\Models\CurrentBlock;
 class CheckNewTransactionsJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -30,7 +31,8 @@ class CheckNewTransactionsJob implements ShouldQueue
     public function __construct()
     {
         $this->fantomService =  new FantomService();
-        $this->blockNumber = $this->fantomService->getBlockNumber();
+        // $this->blockNumber = $this->fantomService->getBlockNumber();
+        $this->blockNumber = '0x' . dechex($this->getCurrentBlock() + 1);
     }
 
     /**
@@ -82,5 +84,36 @@ class CheckNewTransactionsJob implements ShouldQueue
                 }
             }
         }
+        $currentBlockNumber = (int)hexdec($this->blockNumber);
+        $this->updateBlockNumber($currentBlockNumber);
+    }
+
+    public function getCurrentBlock()
+    {
+        $currentBlock = CurrentBlock::first();
+        if (!$currentBlock) {
+            $currentBlock = $this->fantomService->getBlockNumber();
+            $currentBlock = CurrentBlock::create([
+                'block_number' => hexdec($currentBlock)
+            ]);
+        }
+
+        return $currentBlock->block_number;
+    }
+
+    public function updateBlockNumber($newBlockNumber){
+
+        $currentBlock = CurrentBlock::first();
+        if (!$currentBlock) {
+            $currentBlock = CurrentBlock::create([
+                'block_number' => $newBlockNumber
+            ]);
+        } else {
+            $currentBlock->update([
+                'block_number' => $newBlockNumber
+            ]);
+        }
+
+        return $currentBlock;
     }
 }

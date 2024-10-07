@@ -11,7 +11,7 @@ class FantomBalances extends Model
 
     protected $table = 'wallets';
 
-    protected $fillable = ['address_id', 'ftm', 'usdt'];
+    protected $fillable = ['address_id', 'currency', 'amount'];
 
     public function address()
     {
