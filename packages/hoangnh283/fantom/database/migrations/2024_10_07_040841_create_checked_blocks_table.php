@@ -13,8 +13,9 @@ return new class extends Migration
      */
     public function up()
     {
-        Schema::create('current_block', function (Blueprint $table) {
+        Schema::create('checked_blocks', function (Blueprint $table) {
             $table->unsignedBigInteger('block_number'); 
+            $table->timestamps();
         });
     }
 
@@ -25,6 +26,6 @@ return new class extends Migration
      */
     public function down()
     {
-        Schema::dropIfExists('current_block');
+        Schema::dropIfExists('checked_blocks');
     }
 };

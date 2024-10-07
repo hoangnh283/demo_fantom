@@ -5,12 +5,11 @@ namespace Hoangnh283\Fantom\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class CurrentBlock extends Model
+class CheckedBlock extends Model
 {
     use HasFactory;
 
-    protected $table = 'current_block';
-    public $timestamps = false;
+    protected $table = 'checked_blocks';
     protected $fillable = ['block_number'];
 
 }

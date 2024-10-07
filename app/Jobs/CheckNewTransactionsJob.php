@@ -14,7 +14,7 @@ use GuzzleHttp\Client;
 use Hoangnh283\Fantom\Models\FantomDeposit;
 use Hoangnh283\Fantom\Models\FantomAddress;
 use Hoangnh283\Fantom\Models\FantomTransactions;
-use Hoangnh283\Fantom\Models\CurrentBlock;
+use Hoangnh283\Fantom\Models\CheckedBlock;
 class CheckNewTransactionsJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -32,7 +32,7 @@ class CheckNewTransactionsJob implements ShouldQueue
     {
         $this->fantomService =  new FantomService();
         // $this->blockNumber = $this->fantomService->getBlockNumber();
-        $this->blockNumber = '0x' . dechex($this->getCurrentBlock() + 1);
+        $this->blockNumber = '0x' . dechex($this->getLatestBlock() + 1);
     }
 
     /**
@@ -85,15 +85,15 @@ class CheckNewTransactionsJob implements ShouldQueue
             }
         }
         $currentBlockNumber = (int)hexdec($this->blockNumber);
-        $this->updateBlockNumber($currentBlockNumber);
+        $this->insertBlockNumber($currentBlockNumber);
     }
 
-    public function getCurrentBlock()
+    public function getLatestBlock()
     {
-        $currentBlock = CurrentBlock::first();
+        $currentBlock = CheckedBlock::latest()->first();
         if (!$currentBlock) {
             $currentBlock = $this->fantomService->getBlockNumber();
-            $currentBlock = CurrentBlock::create([
+            $currentBlock = CheckedBlock::create([
                 'block_number' => hexdec($currentBlock)
             ]);
         }
@@ -101,19 +101,12 @@ class CheckNewTransactionsJob implements ShouldQueue
         return $currentBlock->block_number;
     }
 
-    public function updateBlockNumber($newBlockNumber){
+    public function insertBlockNumber($newBlockNumber){
 
-        $currentBlock = CurrentBlock::first();
-        if (!$currentBlock) {
-            $currentBlock = CurrentBlock::create([
-                'block_number' => $newBlockNumber
-            ]);
-        } else {
-            $currentBlock->update([
-                'block_number' => $newBlockNumber
-            ]);
-        }
+       $newBlockNumber = CheckedBlock::create([
+            'block_number' => $newBlockNumber,
+        ]);
 
-        return $currentBlock;
+        return $newBlockNumber;
     }
 }
