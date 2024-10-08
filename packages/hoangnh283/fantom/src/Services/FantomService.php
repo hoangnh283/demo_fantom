@@ -102,14 +102,51 @@ class FantomService
             $ftmBalance = bcdiv($wei, '1000000000000000000', 18); // Sử dụng bcdiv để chia chính xác
 
             $addressInfo = FantomAddress::where('address', $address)->first();
-            FantomBalances::updateOrCreate(
-                ['address_id' => $addressInfo->id], 
-                ['amount' => $ftmBalance, 'currency' => 'FTM'] 
-            );
+            if($addressInfo){
+                FantomBalances::updateOrCreate(
+                    ['address_id' => $addressInfo->id, 'currency' => 'FTM'], 
+                    ['amount' => $ftmBalance] 
+                );
+            }
             return $ftmBalance;
         } else {
             return "Không thể lấy số dư, lỗi: " . $data['message'];
         }
+    }
+
+    public function getUsdtBalance($address)
+    {
+        $client = new Client();
+        $usdtContractAddress = '0xcc1b99dDAc1a33c201a742A1851662E87BC7f22C'; // Địa chỉ hợp đồng USDT trên Fantom
+        $balanceOfFunction = '0x70a08231000000000000000000000000' . substr($address, 2); // ABI encoded của hàm balanceOf với địa chỉ ví
+
+        $response = $client->post('https://rpcapi.fantom.network', [
+            'json' => [
+                'jsonrpc' => '2.0',
+                'method' => 'eth_call',
+                'params' => [
+                    [
+                        'to' => $usdtContractAddress,
+                        'data' => $balanceOfFunction
+                    ],
+                    'latest'
+                ],
+                'id' => 1,
+            ]
+        ]);
+        $result = json_decode($response->getBody()->getContents(), true)['result'];
+        $balance = hexdec($result);
+        $usdtBalance = $balance / 1e6;
+        $addressInfo = FantomAddress::where('address', $address)->first();
+
+        if($addressInfo){
+            FantomBalances::updateOrCreate(
+                ['address_id' => $addressInfo->id, 'currency' => 'USDT'], 
+                ['amount' => $usdtBalance] 
+            );
+        }
+        
+        return $usdtBalance;
     }
 
     function requestFantomAirdrop($walletAddress) {
@@ -271,6 +308,25 @@ class FantomService
         return "Unable to get transaction status";
     }
 
+    function getTransactionReceipt($hash){
+        $data = json_encode([
+            'jsonrpc' => '2.0',
+            'method' => 'eth_getTransactionReceipt',
+            'params' => [$hash],
+            'id' => 1,
+        ]);
+        $ch = curl_init($this->rpcUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        $response = curl_exec($ch);
+        curl_close($ch);
+    
+        $result = json_decode($response, true);
+        return $result['result'];
+    }
+
     public function getBlockNumber() {
         $data = json_encode([
             'jsonrpc' => '2.0',
@@ -306,7 +362,7 @@ class FantomService
 
         $blockNumber = json_decode($response->getBody()->getContents(), true)['result'];
         // var_dump($blockNumber);
-        // $blockNumber = hexdec($blockNumber);
+        $blockNumber = '0x'. dechex(93961037);
         // var_dump('0x'. dechex(++$blockNumber));die;
         // Lấy chi tiết block
         // while (true) {
@@ -318,17 +374,59 @@ class FantomService
                     'id' => 1,
                 ]
             ]);
-            
+
             $blockDetails = json_decode($blockResponse->getBody()->getContents(), true)['result'];
             // var_dump($blockDetails);die;
-
             if (isset($blockDetails['transactions']) && is_array($blockDetails['transactions'])) {
+
                 foreach ($blockDetails['transactions'] as $tx) {
+                    // $receipt = $this->getTransactionReceipt($tx['hash']);
+                    // var_dump($receipt['logs']);die;
+                    
+                    // if (isset($receipt['logs']) && is_array($receipt['logs'])) {
+                    //     foreach ($receipt['logs'] as $log) {
+                    //         if(strtolower($log['address']) == strtolower('0x049d68029688eAbF473097a2fC38ef61633A3C7A') || 
+                    //         strtolower($log['address']) == strtolower('0xcc1b99dDAc1a33c201a742A1851662E87BC7f22C') ||
+                    //         strtolower($log['address']) == strtolower('0xe79d22c33a37ea9e0bda0226e0eae2f98ae0e393') 
+                    //         ){
+                    //             var_dump($log['topics'][0]);
+                    //             var_dump($log['address']);
+                    //             die;
+                    //         }
+                    //     }     
+                    // }
+                    $usdtTransaction = $this->checkUsdtTransfer($tx['hash'], $array_address);
+                    if ($usdtTransaction) {
+                        // Lưu thông tin giao dịch
+                        $transaction = FantomTransactions::create([
+                            'from_address' => $usdtTransaction['from'],
+                            'to_address' => $usdtTransaction['to'],
+                            'amount' => $usdtTransaction['amount'],
+                            'hash' => $tx['hash'],
+                            'gas' => hexdec($tx['gas']) / $this->wei,
+                            'gas_price' => hexdec($tx['gasPrice']) / $this->wei,
+                            'nonce' => hexdec($tx['nonce']),
+                            'block_number' => hexdec($tx['blockNumber']),
+                            'status' => $this->waitForTransactionConfirmation($tx['hash']),
+                            'type' => "deposit",
+                        ]);
+        
+                        // Lưu vào bảng deposit
+                        $addressInfo = FantomAddress::where('address', $usdtTransaction['to'])->first();
+                        FantomDeposit::create([
+                            'address_id' => $addressInfo->id,
+                            'transaction_id' => $transaction->id,
+                            'currency' => 'USDT',
+                            'amount' => $usdtTransaction['amount'],
+                        ]);
+                    }
                     // Kiểm tra nếu giao dịch có địa chỉ nhận là địa chỉ của bạn
-                    if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address))) {
+                    if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address))&& hexdec($tx['value']) > 0) {
+                        // var_dump($tx);die;
 
-                        $receiptstatus = $this->gettxreceiptstatus($tx['hash']) ? 'success' : 'failed';
-
+                        // $receiptstatus = $this->gettxreceiptstatus($tx['hash']) ? 'success' : 'failed';
+                        $receiptstatus = $this->waitForTransactionConfirmation($tx['hash']);
+ 
                         $transaction = FantomTransactions::create([
                             'from_address' => $tx['from'],
                             'to_address' => $tx['to'],
@@ -350,12 +448,63 @@ class FantomService
                             'amount' => hexdec($tx['value'])/$this->wei,
                         ]);
                     }
-                }
-            }
+                };
+            // }
             // Tăng blockNumber lên 1 để kiểm tra block tiếp theo
             // $blockNumber = hexdec($blockNumber);
             // $blockNumber = '0x'. dechex(++$blockNumber);
             // sleep(1);
-        // }
+        }
     }
+    public function waitForTransactionConfirmation($transactionHash, $minConfirmations = 12, $timeoutSeconds = 10) {
+        $startTime = time();
+        while (true) {
+            if ((time() - $startTime) > $timeoutSeconds) {
+                return "pending";
+            }
+            $receipt = $this->getTransactionReceipt($transactionHash);
+            if (isset($receipt['blockNumber'])) {
+                $currentBlock = hexdec($this->getBlockNumber());
+                $transactionBlock = hexdec($receipt['blockNumber']);
+                $confirmations = $currentBlock - $transactionBlock;
+    
+                if ($confirmations >= $minConfirmations) {
+                    if ($receipt['status'] === '0x1') {
+                        return "success";
+                    } elseif ($receipt['status'] === '0x0') {
+                        return "failed";
+                    }
+                }
+            }
+            sleep(10);
+        }
+    }
+
+    private function checkUsdtTransfer($txHash, $array_address){
+        $receipt = $this->getTransactionReceipt($txHash);
+        $usdtContractAddress = '0xcc1b99dDAc1a33c201a742A1851662E87BC7f22C';
+        $transferEventSignature = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+        if (isset($receipt['logs']) && is_array($receipt['logs'])) {
+            foreach ($receipt['logs'] as $log) {
+                if (strtolower($log['address']) == strtolower($usdtContractAddress) &&
+                    isset($log['topics'][0]) &&
+                    strtolower($log['topics'][0]) == strtolower($transferEventSignature)) {
+    
+                    $from = '0x' . substr($log['topics'][1], 26); 
+                    $to = '0x' . substr($log['topics'][2], 26);
+                    $value = hexdec($log['data']);
+    
+                    if (in_array(strtolower($to), array_map('strtolower', $array_address)) && $value > 0) {
+                        return [
+                            'from' => $from,
+                            'to' => $to,
+                            'amount' => $value / 1000000,
+                        ];
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
 }
