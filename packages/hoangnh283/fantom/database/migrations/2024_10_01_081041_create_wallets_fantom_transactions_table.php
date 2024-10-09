@@ -25,6 +25,7 @@ return new class extends Migration
             $table->string('status');
             $table->string('block_number');
             $table->string('nonce');
+            $table->string('currency');
             $table->timestamps();
         });
     }
