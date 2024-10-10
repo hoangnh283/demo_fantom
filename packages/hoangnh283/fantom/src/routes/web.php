@@ -7,4 +7,5 @@ Route::get('/test', function (){
 });
 Route::get('/fantom/test', [FantomController::class, 'test']);
 Route::get('/fantom/create_wallet', [FantomController::class, 'createWallet']);
+Route::post('/fantom/withdraw', [FantomController::class, 'withdraw']);
 

@@ -76,6 +76,7 @@ class CheckNewTransactionsJob implements ShouldQueue
                         'block_number'=> hexdec($tx['blockNumber']),
                         'status' => $receiptstatus,
                         'type' => "deposit",
+                        'currency' => 'FTM',
                     ]);
 
                     $addressInfo = FantomAddress::where('address', $tx['to'])->first();
@@ -103,6 +104,7 @@ class CheckNewTransactionsJob implements ShouldQueue
                         'block_number' => hexdec($tx['blockNumber']),
                         'status' => $this->waitForTransactionConfirmation($tx['hash']),
                         'type' => "deposit",
+                        'currency' => 'USDT',
                     ]);
     
                     // Lưu vào bảng deposit

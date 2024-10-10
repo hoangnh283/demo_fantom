@@ -20,9 +20,10 @@ use Web3p\EthereumUtil;
 use Hoangnh283\Fantom\Models\FantomDeposit;
 use Hoangnh283\Fantom\Models\FantomTransactions;
 use Hoangnh283\Fantom\Models\FantomBalances;
+use Hoangnh283\Fantom\Models\CoinInfos;
 class FantomService
 {
-    protected $wei = '1000000000000000000'; 
+    public $wei = '1000000000000000000'; 
     protected $apiKey = 'XFUA9I7AAGINWFE4XB3UFG5AS4FDRT5QGC';
     // protected $rpcUrl = 'https://rpcapi.fantom.network';
     private $chainId;
@@ -36,15 +37,7 @@ class FantomService
         'fantom_testnet' => [
             'chainId' => 4002,
             'rpcUrl' => 'https://rpc.testnet.fantom.network',
-        ],
-        'bsc_mainnet' => [
-            'chainId' => 56,
-            'rpcUrl' => 'https://bsc-dataseed.binance.org',
-        ],
-        'bsc_testnet' => [
-            'chainId' => 97,
-            'rpcUrl' => 'https://data-seed-prebsc-1-s1.binance.org:8545',
-        ],
+        ]
     ];
     public function __construct($networkName = 'fantom_mainnet'){
         if (isset(self::$networks[$networkName])) {
@@ -149,38 +142,43 @@ class FantomService
         return $usdtBalance;
     }
 
-    function requestFantomAirdrop($walletAddress) {
-        // URL của Fantom Faucet trên Testnet
-        $faucetUrl = "https://faucet.fantom.network/";
-
-        // Dữ liệu POST sẽ được gửi cùng với yêu cầu
-        $postData = [
-            'address' => $walletAddress,
-        ];
-        // Khởi tạo cURL
-        $ch = curl_init();
-
-        // Cấu hình cURL
-        curl_setopt($ch, CURLOPT_URL, $faucetUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData)); // Chuyển dữ liệu thành định dạng URL-encoded
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/x-www-form-urlencoded',
+    public function getTokenBalance($address, $tokenAddress, $decimals)
+    {
+        $client = new Client();
+        $balanceOfFunction = '0x70a08231000000000000000000000000' . substr($address, 2);
+    
+        $response = $client->post('https://rpcapi.fantom.network', [
+            'json' => [
+                'jsonrpc' => '2.0',
+                'method' => 'eth_call',
+                'params' => [
+                    [
+                        'to' => $tokenAddress,
+                        'data' => $balanceOfFunction
+                    ],
+                    'latest'
+                ],
+                'id' => 1,
+            ]
         ]);
+    
+        $result = json_decode($response->getBody()->getContents(), true)['result'];
+        $balance = hexdec($result);
+        $tokenBalance = $balance / pow(10, $decimals);
+        $addressInfo = FantomAddress::where('address', $address)->first();
+        $tokenName = CoinInfos::where('address', $tokenAddress)->pluck('name')->first();
+        $tokenName = $tokenName ?? 'Token not found';
 
-        // Thực hiện request và lưu kết quả trả về
-        $response = curl_exec($ch);
-
-        // Đóng cURL session
-        curl_close($ch);
-
-        // Kiểm tra phản hồi
-        if ($response === FALSE) {
-            return "Request failed!";
+        if ($addressInfo) {
+            FantomBalances::updateOrCreate(
+                ['address_id' => $addressInfo->id, 'currency' => $tokenName], 
+                ['amount' => $tokenBalance]
+            );
         }
-        return $response;
+    
+        return $tokenBalance;
     }
+
     public function getGasPrice() {
         $data = json_encode([
             'jsonrpc' => '2.0',
@@ -191,7 +189,7 @@ class FantomService
         return $this->sendRpcRequest($data);
     }
 
-    public function getEstimateGas($fromAddress, $toAddress, $value) {
+    public function getEstimateGas($fromAddress, $toAddress, $value, $data = '') {
         $data = json_encode([
             'jsonrpc' => '2.0',
             'method' => 'eth_estimateGas',
@@ -199,15 +197,25 @@ class FantomService
                 [
                     "from" => $fromAddress,
                     "to" => $toAddress,
-                    "value" => $value
+                    "value" => $value,
+                    "data" => $data
                 ],
             ],
             'id' => 1,
         ]);
-        return $this->sendRpcRequest($data);
+
+        $ch = curl_init($this->rpcUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        $response = curl_exec($ch);
+        curl_close($ch);
+    
+        return json_decode($response, true);
     }
 
-    public function transferFantomToken($fromPrivateKey, $fromAddress, $toAddress, $amount) {
+    public function transferFantomFTM($fromPrivateKey, $fromAddress, $toAddress, $amount) {
         // $amountWei = str_pad(dechex(bcmul($amount, '1000000000000000000')), 64, '0', STR_PAD_LEFT); 
         $amountWei = '0x' . dechex(bcmul($amount, '1000000000000000000')); 
         $nonce = $this->getTransactionCount($fromAddress);
@@ -224,12 +232,66 @@ class FantomService
             // 'data' => '0xa9059cbb' . str_pad(substr($toAddress, 2), 64, '0', STR_PAD_LEFT) . $amountWei,
             'data' => ''
         ];
+        return [
+            'gasEstimate' => $gasHex,
+            'gasPrice' => $gasPriceHex,
+            'nonce' => $nonce,
+            'hash' => '0x2244e6d4d2dc1198be86cfb759d5eb1fc56630cba3fb9a5b4aea2448cc9b5a14',
+        ];
         $signedTransaction = $this->signTransaction($fromPrivateKey, $transaction);
         $result = $this->sendTransaction($signedTransaction);
-        
-        return $result;
+        return [
+            'gasEstimate' => $gasHex,
+            'gasPrice' => $gasPriceHex,
+            'nonce' => $nonce,
+            'hash' => $result,
+        ];
     }
-    
+
+    public function transferFantomToken($fromPrivateKey, $fromAddress, $toAddress, $amount, $tokenInfo) {
+        try {
+            $contractAddress = $tokenInfo->address;
+            $tokenDecimals = $tokenInfo->decimal; 
+            $amountToken = bcmul($amount, bcpow('10', $tokenDecimals));
+            
+            $amountHex = str_pad(dechex($amountToken), 64, '0', STR_PAD_LEFT); // Chuyển đổi số tiền sang hex
+            $toAddressHex = str_pad(substr($toAddress, 2), 64, '0', STR_PAD_LEFT); // Địa chỉ người nhận
+            $data = '0xa9059cbb' . $toAddressHex . $amountHex; // 0xa9059cbb là hash của hàm transfer(address,uint256)
+        
+            $nonce = $this->getTransactionCount($fromAddress);
+            $getGasHex = $this->getEstimateGas($fromAddress, $contractAddress, '0x0', $data);
+            if(!empty($getGasHex['error'])) return 'Error: ' . $getGasHex['error']["message"];
+            $gasHex = $getGasHex["result"];
+            $gasPriceHex = $this->getGasPrice();
+        
+            $transaction = [
+                'nonce' => $nonce,
+                'from' => $fromAddress,
+                'to' => $contractAddress, // Địa chỉ hợp đồng
+                'value' => '0x0',
+                'gas' => $gasHex,
+                'gasPrice' => $gasPriceHex,
+                'data' => $data,
+                'chainId' => $this->chainId
+            ];
+        
+            $signedTransaction = $this->signTransaction($fromPrivateKey, $transaction);
+        
+            $result = $this->sendTransaction($signedTransaction);
+        
+            return [
+                'gasEstimate' => $gasHex,
+                'gasPrice' => $gasPriceHex,
+                'nonce' => $nonce,
+                'hash' => $result,
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error' . $e->getMessage());
+            return [];
+        }
+        
+    }
+
     function getTransactionCount($address) {
         $data = json_encode([
             'jsonrpc' => '2.0',
@@ -286,7 +348,7 @@ class FantomService
     
         return $this->sendRpcRequest($data);
     }
-    
+
     function gettxreceiptstatus($txHash, $maxRetries = 10, $delay = 1) {
         $apiUrl = "https://api.ftmscan.com/api?module=transaction&action=gettxreceiptstatus&txhash=" . $txHash . "&apikey=" . $this->apiKey;
         $retryCount = 0;
@@ -327,6 +389,36 @@ class FantomService
         return $result['result'];
     }
 
+    public function getTransactionByHash($hash, $maxRetries = 10, $retryDelay = 2){
+        $data = json_encode([
+            'jsonrpc' => '2.0',
+            'method' => 'eth_getTransactionByHash',
+            'params' => [$hash],
+            'id' => 1,
+        ]);
+        $attempts = 0; 
+        do {
+            $ch = curl_init($this->rpcUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+            $response = curl_exec($ch);
+            curl_close($ch);
+    
+            $result = json_decode($response, true);
+            if (isset($result['error'])) {
+                return "Error: " . $result['error']['message'];
+            }
+            if (!is_null($result['result']['blockNumber']) && !is_null($result['result']['blockHash'])) {
+                return $result['result'];
+            }
+            $attempts++;
+            sleep($retryDelay);
+        } while ($attempts < $maxRetries);
+        return $result['result'];
+    }
+
     public function getBlockNumber() {
         $data = json_encode([
             'jsonrpc' => '2.0',
@@ -346,116 +438,6 @@ class FantomService
         return $result['result'];
     }
 
-    public function checkNewTransactions(){
-        $array_address =  FantomAddress::pluck('address')->toArray();
-
-        $client = new Client();
-        // Lấy block mới nhất
-        $response = $client->post($this->rpcUrl, [
-            'json' => [
-                'jsonrpc' => '2.0',
-                'method' => 'eth_blockNumber',
-                'params' => [],
-                'id' => 1,
-            ]
-        ]);
-
-        $blockNumber = json_decode($response->getBody()->getContents(), true)['result'];
-        // var_dump($blockNumber);
-        $blockNumber = '0x'. dechex(93961037);
-        // var_dump('0x'. dechex(++$blockNumber));die;
-        // Lấy chi tiết block
-        // while (true) {
-            $blockResponse = $client->post($this->rpcUrl, [
-                'json' => [
-                    'jsonrpc' => '2.0',
-                    'method' => 'eth_getBlockByNumber', // API để lấy block theo số
-                    'params' => [$blockNumber, true], // true để lấy chi tiết các giao dịch
-                    'id' => 1,
-                ]
-            ]);
-
-            $blockDetails = json_decode($blockResponse->getBody()->getContents(), true)['result'];
-            // var_dump($blockDetails);die;
-            if (isset($blockDetails['transactions']) && is_array($blockDetails['transactions'])) {
-
-                foreach ($blockDetails['transactions'] as $tx) {
-                    // $receipt = $this->getTransactionReceipt($tx['hash']);
-                    // var_dump($receipt['logs']);die;
-                    
-                    // if (isset($receipt['logs']) && is_array($receipt['logs'])) {
-                    //     foreach ($receipt['logs'] as $log) {
-                    //         if(strtolower($log['address']) == strtolower('0x049d68029688eAbF473097a2fC38ef61633A3C7A') || 
-                    //         strtolower($log['address']) == strtolower('0xcc1b99dDAc1a33c201a742A1851662E87BC7f22C') ||
-                    //         strtolower($log['address']) == strtolower('0xe79d22c33a37ea9e0bda0226e0eae2f98ae0e393') 
-                    //         ){
-                    //             var_dump($log['topics'][0]);
-                    //             var_dump($log['address']);
-                    //             die;
-                    //         }
-                    //     }     
-                    // }
-                    $usdtTransaction = $this->checkUsdtTransfer($tx['hash'], $array_address);
-                    if ($usdtTransaction) {
-                        // Lưu thông tin giao dịch
-                        $transaction = FantomTransactions::create([
-                            'from_address' => $usdtTransaction['from'],
-                            'to_address' => $usdtTransaction['to'],
-                            'amount' => $usdtTransaction['amount'],
-                            'hash' => $tx['hash'],
-                            'gas' => hexdec($tx['gas']) / $this->wei,
-                            'gas_price' => hexdec($tx['gasPrice']) / $this->wei,
-                            'nonce' => hexdec($tx['nonce']),
-                            'block_number' => hexdec($tx['blockNumber']),
-                            'status' => $this->waitForTransactionConfirmation($tx['hash']),
-                            'type' => "deposit",
-                        ]);
-        
-                        // Lưu vào bảng deposit
-                        $addressInfo = FantomAddress::where('address', $usdtTransaction['to'])->first();
-                        FantomDeposit::create([
-                            'address_id' => $addressInfo->id,
-                            'transaction_id' => $transaction->id,
-                            'currency' => 'USDT',
-                            'amount' => $usdtTransaction['amount'],
-                        ]);
-                    }
-                    // Kiểm tra nếu giao dịch có địa chỉ nhận là địa chỉ của bạn
-                    if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address))&& hexdec($tx['value']) > 0) {
-                        // var_dump($tx);die;
-
-                        // $receiptstatus = $this->gettxreceiptstatus($tx['hash']) ? 'success' : 'failed';
-                        $receiptstatus = $this->waitForTransactionConfirmation($tx['hash']);
- 
-                        $transaction = FantomTransactions::create([
-                            'from_address' => $tx['from'],
-                            'to_address' => $tx['to'],
-                            'amount' => hexdec($tx['value'])/$this->wei,
-                            'hash' => $tx['hash'],
-                            'gas'=> hexdec($tx['gas'])/$this->wei,
-                            'gas_price'=> hexdec($tx['gasPrice'])/$this->wei,
-                            'nonce'=> hexdec($tx['nonce']),
-                            'block_number'=> hexdec($tx['blockNumber']),
-                            'status' => $receiptstatus,
-                            'type' => "deposit",
-                            
-                        ]);
-                        $addressInfo = FantomAddress::where('address', $tx['to'])->first();
-                        FantomDeposit::create([
-                            'address_id' => $addressInfo->id,
-                            'transaction_id' => $transaction->id,
-                            'currency' => 'FTM',
-                            'amount' => hexdec($tx['value'])/$this->wei,
-                        ]);
-                    }
-                };
-            // }
-            // Tăng blockNumber lên 1 để kiểm tra block tiếp theo
-            // $blockNumber = hexdec($blockNumber);
-            // $blockNumber = '0x'. dechex(++$blockNumber);
-            // sleep(1);
-        }
-    }
     public function waitForTransactionConfirmation($transactionHash, $minConfirmations = 12, $timeoutSeconds = 10) {
         $startTime = time();
         while (true) {
@@ -506,5 +488,82 @@ class FantomService
         }
         return null;
     }
+
+    public function checkFTMTransfer($address, $startBlock, $endBlock){
+        try {
+            $client = new Client();
+
+            $response = $client->get('https://api.ftmscan.com/api', [
+                'query' => [
+                    'module' => 'account',
+                    'action' => 'txlist',
+                    'address' => $address,  
+                    'startblock' => $startBlock,
+                    'endblock' => $endBlock,
+                    'apikey' => $this->apiKey  
+                ]
+            ]);
+
+            $responseData = json_decode($response->getBody()->getContents(), true);
+            if (isset($responseData['status']) && $responseData['status'] == '1') {
+                if (!empty($responseData['result'])) {
+                    foreach($responseData['result'] as $value){
+                        if(strtolower($value['to']) == strtolower($address) && $value['isError'] == "0" && (int)$value['confirmations'] >= 12){
+                            return $value;
+                        }
+                    }
+                    return [];
+                } else {
+                    return [];
+                }
+                
+            } else {
+                Log::error('FTMScan API Error: ' . $responseData['message']);
+                return [];
+            }
+        } catch (\Exception $e) {
+            Log::error('Error while calling FTMScan API txlist: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    public function checkTokenTransfer($address, $contractAddress, $startBlock, $endBlock){
+        try {
+            $client = new Client();
+
+            $response = $client->get('https://api.ftmscan.com/api', [
+                'query' => [
+                    'module' => 'account',
+                    'action' => 'tokentx',
+                    'contractaddress' => $contractAddress,
+                    'address' => $address,  
+                    'startblock' => $startBlock,
+                    'endblock' => $endBlock,
+                    'apikey' => $this->apiKey  
+                ]
+            ]);
+
+            $responseData = json_decode($response->getBody()->getContents(), true);
+            if (isset($responseData['status']) && $responseData['status'] == '1') {
+                if (!empty($responseData['result'])) {
+                    foreach($responseData['result'] as $value){
+                        if(strtolower($value['to']) == strtolower($address) && (int)$value['confirmations'] >= 12){
+                            return $value;
+                        }
+                    }
+                    return [];
+                } else {
+                    return [];
+                }
+            } else {
+                Log::error('FTMScan API Error: ' . $responseData['message']);
+                return [];
+            }
+        } catch (\Exception $e) {
+            Log::error('Error while calling FTMScan API tokentx: ' . $e->getMessage());
+            return [];
+        }
+    }
+    
 
 }

@@ -7,20 +7,14 @@ use Hoangnh283\Fantom\Services\FantomService;
 use App\Jobs\CheckNewTransactionsJob;
 use Hoangnh283\Fantom\Models\FantomAddress;
 use Hoangnh283\Fantom\Models\FantomTransactions;
+use Exception;
 use Hoangnh283\Fantom\Models\FantomWithdraw;
 use GuzzleHttp\Client;
-
+use Hoangnh283\Fantom\Models\CheckedBlock;
+use Hoangnh283\Fantom\Models\CoinInfos;
 class FantomController extends Controller
 {
     public function test(Request $request) {
-        $fantomService =  new FantomService();
-        // $test = $fantomService->checkNewTransactions();
-        // $balance = $fantomService->transferFantomToken('5bcce244246f48ca0f9fac8ddb9da4648f26ab8aa4ef60a6816c69b2f74f0912','0x50C3e7903F7808b05473245aAAE0598165EF4F93', '0x496d6ae4B693E5eF9cCE6316567C8A8fD1ea34e9', 0.001);
-
-        // var_dump($test);die;
-        CheckNewTransactionsJob::dispatch();
-        // CheckNewTransactionsJob::dispatch($fantomService)->delay(now()->addSeconds(10));
-        return true;
     }
     public function createWallet(Request $request) {
 
@@ -36,14 +30,76 @@ class FantomController extends Controller
     }
 
     public function withdraw(Request $request) {
+        $fromAddress = $request->fromAddress;
+        $toAddress = $request->toAddress;
+        $amount = $request->amount;
+        $token = $request->token;
 
-        $fromPrivateKey = '5bcce244246f48ca0f9fac8ddb9da4648f26ab8aa4ef60a6816c69b2f74f0912';
-        $fromAddress = '0x50C3e7903F7808b05473245aAAE0598165EF4F93';
-        $toAddress = '0x496d6ae4B693E5eF9cCE6316567C8A8fD1ea34e9';
-        $amount = 0.001;
-        $fantomService =  new FantomService();
-        $hash = $fantomService->transferFantomToken($fromPrivateKey, $fromAddress, $toAddress, $amount);
+        try{
+            $userAddressInfo = FantomAddress::where('address', $fromAddress)->first();
+            $fromPrivateKey = $userAddressInfo->private_key;
+            $transaction = FantomTransactions::create([
+                'from_address' => $fromAddress,
+                'to_address' => $toAddress,
+                'amount' => $amount,
+                'hash' => '0x',
+                'gas'=> 0,
+                'gas_price'=> 0,
+                'nonce'=> 0,
+                'block_number'=> 0,
+                'status' => 'pending',
+                'type' => "withdraw",
+                'currency' =>  $token,
+            ]);
 
-        return $hash;
+            $fantomService = new FantomService();
+            $wei = $fantomService->wei;
+
+            if($token == 'FTM'){
+
+                $resultTransfer = $fantomService->transferFantomFTM($fromPrivateKey, $fromAddress, $toAddress, $amount); 
+                $transactionInfo = $fantomService->getTransactionByHash($resultTransfer['hash']);
+                $transaction->hash = $resultTransfer['hash'];
+                $transaction->gas = bcdiv(hexdec($transactionInfo['gas']), $wei, 18);
+                $transaction->gas_price = bcdiv(hexdec($transactionInfo['gasPrice']), $wei, 18);
+                $transaction->nonce = hexdec($transactionInfo['nonce']);
+                $transaction->block_number = hexdec($transactionInfo['blockNumber']);
+                $transaction->status = 'success';
+                $transaction->save();
+
+                $balance = $fantomService->getBalance($fromAddress);
+            }else{
+                
+                $tokenInfo = CoinInfos::where('name', $token)->first();
+                if(!$tokenInfo) return response()->json(['error' => 'Token name not found'], 500);
+                $resultTransfer = $fantomService->transferFantomToken($fromPrivateKey, $fromAddress, $toAddress, $amount, $tokenInfo);
+
+                $transactionInfo = $fantomService->getTransactionByHash($resultTransfer['hash']);
+                $transaction->hash = $resultTransfer['hash'];
+                $transaction->gas = bcdiv(hexdec($transactionInfo['gas']), $wei, 18);
+                $transaction->gas_price = bcdiv(hexdec($transactionInfo['gasPrice']), $wei, 18);
+                $transaction->nonce = hexdec($transactionInfo['nonce']);
+                $transaction->block_number = hexdec($transactionInfo['blockNumber']);
+                $transaction->status = 'success';
+                $transaction->save();
+
+                $balance = $fantomService->getTokenBalance($fromAddress, $tokenInfo->address, $tokenInfo->decimal);
+
+            }
+            FantomWithdraw::create([
+                'address_id' => $userAddressInfo->id,
+                'transaction_id' => $transaction->id,
+                'currency' => $token,
+                'amount' => $amount,
+            ]);
+
+            return response()->json(['success' => true,'transaction' => $transaction, 'balance' => $balance]); 
+        } catch (Exception $e) {    
+            $transaction->status = 'failed';
+            $transaction->save();
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+        return $transaction;
     }
+
 }
