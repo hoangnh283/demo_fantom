@@ -11,7 +11,7 @@ class FantomTransactions extends Model
 
     protected $table = 'wallets_fantom_transactions';
 
-    protected $fillable = ['from_address', 'to_address','type', 'hash', 'gas', 'gas_price', 'amount','nonce', 'status', 'block_number', 'currency'];
+    protected $fillable = ['from_address', 'to_address','type', 'hash', 'gas', 'gas_price', 'fee', 'amount','nonce', 'status', 'block_number', 'currency'];
 
     public function address()
     {

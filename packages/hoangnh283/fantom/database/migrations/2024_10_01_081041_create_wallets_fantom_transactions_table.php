@@ -20,8 +20,9 @@ return new class extends Migration
             $table->string('to_address')->nullable();
             $table->string('hash')->nullable();
             $table->decimal('amount', 20, 8);
-            $table->decimal('gas', 20, 18);
+            $table->decimal('gas', 20, 8);
             $table->decimal('gas_price', 20, 18);
+            $table->decimal('fee', 20, 18);
             $table->string('status');
             $table->string('block_number');
             $table->string('nonce');

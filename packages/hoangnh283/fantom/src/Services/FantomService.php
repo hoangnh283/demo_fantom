@@ -232,12 +232,6 @@ class FantomService
             // 'data' => '0xa9059cbb' . str_pad(substr($toAddress, 2), 64, '0', STR_PAD_LEFT) . $amountWei,
             'data' => ''
         ];
-        return [
-            'gasEstimate' => $gasHex,
-            'gasPrice' => $gasPriceHex,
-            'nonce' => $nonce,
-            'hash' => '0x2244e6d4d2dc1198be86cfb759d5eb1fc56630cba3fb9a5b4aea2448cc9b5a14',
-        ];
         $signedTransaction = $this->signTransaction($fromPrivateKey, $transaction);
         $result = $this->sendTransaction($signedTransaction);
         return [
@@ -260,7 +254,7 @@ class FantomService
         
             $nonce = $this->getTransactionCount($fromAddress);
             $getGasHex = $this->getEstimateGas($fromAddress, $contractAddress, '0x0', $data);
-            if(!empty($getGasHex['error'])) return 'Error: ' . $getGasHex['error']["message"];
+            if(!empty($getGasHex['error'])) return ['error'=> $getGasHex['error']["message"]];
             $gasHex = $getGasHex["result"];
             $gasPriceHex = $this->getGasPrice();
         
@@ -287,7 +281,9 @@ class FantomService
             ];
         } catch (\Exception $e) {
             Log::error('Error' . $e->getMessage());
-            return [];
+            return [
+                'error'=> $e->getMessage()
+            ];
         }
         
     }

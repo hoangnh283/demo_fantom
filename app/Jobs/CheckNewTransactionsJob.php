@@ -64,14 +64,14 @@ class CheckNewTransactionsJob implements ShouldQueue
                 // Kiểm tra nếu giao dịch có địa chỉ nhận là địa chỉ của bạn
                 if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address)) && hexdec($tx['value']) > 0) { // check giao dịch FTM 
                     $receiptstatus = $this->waitForTransactionConfirmation($tx['hash']);
-
                     $transaction = FantomTransactions::create([
                         'from_address' => $tx['from'],
                         'to_address' => $tx['to'],
                         'amount' => hexdec($tx['value'])/$this->wei,
                         'hash' => $tx['hash'],
-                        'gas'=> hexdec($tx['gas'])/$this->wei,
-                        'gas_price'=> hexdec($tx['gasPrice'])/$this->wei,
+                        'gas'=> hexdec($tx['gas']),
+                        'gas_price'=> bcdiv(hexdec($tx['gasPrice']), $this->wei, 18),
+                        'fee'=> hexdec($tx['gas']) * bcdiv(hexdec($tx['gasPrice']), $this->wei, 18),
                         'nonce'=> hexdec($tx['nonce']),
                         'block_number'=> hexdec($tx['blockNumber']),
                         'status' => $receiptstatus,
@@ -98,8 +98,9 @@ class CheckNewTransactionsJob implements ShouldQueue
                         'to_address' => $usdtTransaction['to'],
                         'amount' => $usdtTransaction['amount'],
                         'hash' => $tx['hash'],
-                        'gas' => hexdec($tx['gas']) / $this->wei,
-                        'gas_price' => hexdec($tx['gasPrice']) / $this->wei,
+                        'gas' => hexdec($tx['gas']),
+                        'gas_price' => bcdiv(hexdec($tx['gasPrice']), $this->wei, 18),
+                        'fee' => hexdec($tx['gas']) * bcdiv(hexdec($tx['gasPrice']), $this->wei, 18),
                         'nonce' => hexdec($tx['nonce']),
                         'block_number' => hexdec($tx['blockNumber']),
                         'status' => $this->waitForTransactionConfirmation($tx['hash']),
