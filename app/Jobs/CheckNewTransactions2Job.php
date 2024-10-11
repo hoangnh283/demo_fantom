@@ -62,16 +62,6 @@ class CheckNewTransactions2Job implements ShouldQueue
             
             foreach ($blockDetails['transactions'] as $tx) {
                 $txData = [];
-                // Kiểm tra nếu giao dịch có địa chỉ nhận là địa chỉ của bạn
-                if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address))&& hexdec($tx['value']) > 0) {
-                    $txData = $this->fantomService->checkFTMTransfer($tx['to'],$this->blockNumber,$this->blockNumber);
-                    $txData['currency'] = 'FTM';
-                    $txData['value'] = $txData['value']/$this->wei;
-                }else{
-                    $txData = $this->fantomService->checkFTMTransfer($tx['to'],$this->blockNumber,$this->blockNumber);
-                    $txData['currency'] = $txData['tokenSymbol'];
-                    $txData['value'] = $txData['value']/pow(10, $txData['tokenDecimal']);
-                }
 
                 if (in_array(strtolower($tx['to']), array_map('strtolower', $array_address))) {
                     if(hexdec($tx['value']) > 0){
